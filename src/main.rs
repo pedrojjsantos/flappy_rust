@@ -1,5 +1,6 @@
 extern crate ggez;
 extern crate oorandom;
+extern crate getrandom;
 extern crate glam;
 
 mod game;
