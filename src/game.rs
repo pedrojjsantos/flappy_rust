@@ -56,8 +56,6 @@ impl Menu {
         self.foreground[0] += self.color_offset * dt.as_secs_f32();
         self.foreground[1] += self.color_offset * dt.as_secs_f32();
         self.foreground[2] += self.color_offset * dt.as_secs_f32();
-
-        println!("off: {} | col: {}", self.color_offset, self.foreground[0]);
     }
 
     /// Draw the prompt at the menu

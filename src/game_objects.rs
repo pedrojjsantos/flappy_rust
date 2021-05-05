@@ -1,10 +1,10 @@
 use std::ops::Range;
 
 use ggez::{Context, GameResult, graphics};
-
-use crate::{SCREEN_SIZE, game::BIRD_SPEED as SPEED};
 use oorandom::Rand32;
 use glam::Vec2;
+
+use crate::{SCREEN_SIZE, game::BIRD_SPEED as SPEED};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
@@ -44,13 +44,14 @@ impl Bird {
         false
     }
 
+    /// Deal with the bird's movement
     pub fn update(&mut self, dt: std::time::Duration) {
         match self.dir {
             Direction::Up(s) => {
-                self.pos.y -= s * dt.as_secs_f32();
-                self.dir = Direction::Up(s - SPEED * dt.as_secs_f32() * 2.0);
+                self.pos.y -= s * dt.as_secs_f32() * 1.5;
+                self.dir = Direction::Up(s - SPEED * dt.as_secs_f32() * 2.5);
 
-                if s < 0.0 { self.dir = Direction::Down(0.0); } 
+                if s < 100.0 { self.dir = Direction::Down(0.0); } 
             }
             Direction::Down(s) => {
                 self.pos.y += s * dt.as_secs_f32() * 2.0;
