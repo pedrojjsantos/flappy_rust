@@ -1,20 +1,21 @@
-use std::{collections::LinkedList, time};
+use std::{collections::LinkedList};
 use ggez::{graphics, Context, event::{EventHandler, KeyCode, KeyMods}};
 use oorandom::Rand32;
 
 use crate::{SCREEN_SIZE, game_objects::{Bird, Pipe}};
 
+
 pub const BIRD_SPEED: f32 = 400.0;
-
-pub const BIRD_WIDTH: f32 = 30.0;
-
+pub const BIRD_SIZE: f32 = 30.0;
 pub const PIPE_WIDTH: f32 = 50.0;
-// Distance between pipes
+
+/// Distance between pipes
 pub const PIPE_DISTANCE: f32 = 200.0;
-// Vertical Gap between two pipes 
+
+/// Vertical Gap between two pipes 
 pub const PIPE_GAP: f32 = 200.0;
 
-
+/// Struct that keeps the state of the starting menu
 struct Menu {
     background: [f32;4],
     foreground: [f32;4],
@@ -36,6 +37,7 @@ impl Menu {
         }
     }
 
+    /// Function to change the color of the text, making it blink
     fn change_foreground_color(&mut self) {
         if self.foreground[0] >= 0.8 || self.foreground[0] <= 0.4 {
             self.color_offset *= -1.0;
@@ -46,6 +48,7 @@ impl Menu {
         }
     }
 
+    /// Draw the prompt at the menu
     fn draw(&mut self, ctx: &mut Context) -> ggez::GameResult {
         graphics::clear(ctx, self.background.into());
 
@@ -68,7 +71,7 @@ impl Menu {
 
 enum GameOption {
     StartScreen,
-    GameOver(time::Instant),
+    GameOver(f32),
     Running,
     Paused,
 }
@@ -88,11 +91,17 @@ impl GameState {
         
         GameState {
             menu: Menu::new(),
-            bird: Bird::new(BIRD_WIDTH),
+            bird: Bird::new(BIRD_SIZE),
             pipes: LinkedList::new(),
             rng,
             state: GameOption::StartScreen,
         }
+    }
+
+    fn restart(&mut self) {
+        self.bird = Bird::new(BIRD_SIZE);
+        self.pipes = LinkedList::new();
+        self.state = GameOption::Running;
     }
 }
 
@@ -104,9 +113,16 @@ impl EventHandler for GameState {
             self.menu.change_foreground_color();
             return Ok(());
         }
-        else if let GameOption::GameOver(t) = self.state {
-            
+        else if let GameOption::GameOver(s) = self.state {
+            if s > 0.0 {
+                let sec = s - ggez::timer::delta(ctx).as_secs_f32();
+                self.state = GameOption::GameOver(sec);
+            }
+
+            return Ok(());
         }
+
+
         // Checks if the first pipe is outside of the screen and deletes it
         if let Some(p) = self.pipes.front() {
             if p.pos_x() < -PIPE_WIDTH {
@@ -138,12 +154,22 @@ impl EventHandler for GameState {
                 self.pipes.push_back(pipe);
             }
         }
+
         
-        self.bird.update(ggez::timer::delta(ctx));
+        let dt = ggez::timer::delta(ctx);
+        
+        self.bird.update(dt);
 
         // Moving the pipes to the left
         for i in self.pipes.iter_mut() {
-            i.move_foward();
+            i.move_foward(dt);
+        }
+        
+        for p in self.pipes.iter() {
+            if self.bird.is_colliding(p) || !self.bird.is_on_screen() {
+                self.state = GameOption::GameOver(5.0);
+                break;
+            }
         }
 
         Ok(())
@@ -162,6 +188,37 @@ impl EventHandler for GameState {
             i.draw(ctx)?;
         }
 
+        if let GameOption::GameOver(s) = self.state {
+            let screen = graphics::Rect::new(0.0, 0.0, SCREEN_SIZE.0, SCREEN_SIZE.1);
+            let rectangle = graphics::Mesh::new_rectangle(
+                ctx,
+                graphics::DrawMode::fill(),
+                screen,
+                [1.0, 0.0, 0.0, 0.7].into()
+            )?;
+
+            
+            graphics::draw(ctx, &rectangle, ([0.0,0.0],))?;
+            
+            let sec = s.ceil() as i8;
+            let f;
+
+            if sec > 0 {
+                f = graphics::TextFragment::new(format!("{}", sec)).scale(60.0.into());
+            } else {
+                f = graphics::TextFragment::new("Press Space!").scale(60.0.into());
+            }
+
+            let text = graphics::Text::new(f);
+                
+            let text_x = (SCREEN_SIZE.0 - text.width(ctx)) / 2.0;
+            let param = graphics::DrawParam::default()
+                .dest([text_x, SCREEN_SIZE.1 / 2.0])
+                .color([0.8, 0.8, 0.8, 1.0].into());
+            
+            graphics::draw(ctx, &text,param)?;
+        }
+
         graphics::present(ctx)?;
 
         Ok(())
@@ -172,6 +229,7 @@ impl EventHandler for GameState {
             KeyCode::Space => {
                 match self.state {
                     GameOption::Running     => self.bird.jump(),
+                    GameOption::GameOver(s) => if s <= 0.0 { self.restart(); },
                     GameOption::StartScreen => self.state = GameOption::Running,
                     _ => (),
                 }

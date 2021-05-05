@@ -30,6 +30,20 @@ impl Bird {
         self.dir = Direction::Up(SPEED);
     }
 
+    pub fn is_on_screen(&self) -> bool {
+        self.pos.y >= 0.0 && self.pos.y + self.size <= SCREEN_SIZE.1
+    }
+
+    pub fn is_colliding(&self, pipe: &Pipe) -> bool {
+        if (self.pos.x + self.size) >= pipe.pos_x() && self.pos.x <= (pipe.pos_x() + pipe.width) {
+            if self.pos.y <= pipe.h_upper || self.pos.y + self.size >= pipe.lower.y {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn update(&mut self, dt: std::time::Duration) {
         match self.dir {
             Direction::Up(s) => {
@@ -111,9 +125,9 @@ impl Pipe {
 
     pub fn pos_x(&self) -> f32 { self.upper.x }
     
-    pub fn move_foward(&mut self) {
-        self.upper.x -= 5.0;
-        self.lower.x -= 5.0;
+    pub fn move_foward(&mut self, dt: std::time::Duration) {
+        self.upper.x -= 300.0 * dt.as_secs_f32();
+        self.lower.x -= 300.0 * dt.as_secs_f32();
     }
 
     pub fn draw(&self, ctx: &mut Context) -> GameResult {
