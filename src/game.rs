@@ -1,267 +1,120 @@
-use std::{collections::LinkedList};
-use ggez::{
-        graphics::{self, TextFragment},
-        event::{EventHandler, KeyCode, KeyMods},
-        Context,
-        timer
-};
+use ggez::input::keyboard::{KeyInput, KeyCode};
+use ggez::{Context, GameResult};
+use ggez::graphics::{self, Color, DrawParam, Mesh, Rect, Canvas};
+use ggez::event::EventHandler;
 use oorandom::Rand32;
 
-use crate::{SCREEN_SIZE, game_objects::{Bird, Pipe}};
+use crate::SCREEN_SIZE;
+use crate::pipe::Pipes;
+use crate::bird::Bird;
 
+const GAMEOVER_COLOR: [f32;4] = [1., 0., 0., 0.5];
 
-pub const BIRD_SPEED: f32 = 400.0;
-pub const BIRD_SIZE: f32 = 30.0;
-pub const PIPE_WIDTH: f32 = 50.0;
-
-/// Distance between pipes
-pub const PIPE_DISTANCE: f32 = 200.0;
-
-/// Vertical Gap between two pipes 
-pub const PIPE_GAP: f32 = 200.0;
-
-/// Generic struct that keeps the state of a text menu
-struct Menu {
-    background: [f32;4],
-    foreground: [f32;4],
-
-    color_offset: f32,
-
-    text: graphics::Text,
-}
-impl Menu {
-    fn new(frag: TextFragment) -> Self{
-        let text = graphics::Text::new(frag);
-
-        Menu {
-            background: [0.0, 0.0, 0.0, 0.0],
-            foreground: [0.9, 0.9, 0.9, 1.0],
-            color_offset: 0.4,
-            text,
-        }
-    }
-
-    /// Function to change the color of the text, making it blink
-    fn change_foreground_color(&mut self, dt: std::time::Duration) {
-        if self.foreground[0] >= 0.9 || self.foreground[0] <= 0.6 {
-            self.color_offset *= -1.0;
-
-            let x = if self.foreground[0] >= 0.9 {0.9} else {0.6};
-
-            self.foreground[0] = x;
-            self.foreground[1] = x;
-            self.foreground[2] = x;
-        }
-
-        self.foreground[0] += self.color_offset * dt.as_secs_f32();
-        self.foreground[1] += self.color_offset * dt.as_secs_f32();
-        self.foreground[2] += self.color_offset * dt.as_secs_f32();
-    }
-
-    /// Draw the prompt at the menu
-    fn draw(&self, ctx: &mut Context) -> ggez::GameResult {
-        let text_pos = [
-            (SCREEN_SIZE.0 - self.text.width(ctx)) / 2.0,
-            (SCREEN_SIZE.1 - self.text.height(ctx)) / 2.0
-        ];
-
-        let param = graphics::DrawParam::default()
-            .dest(text_pos)
-            .color(self.foreground.into());
-
-        graphics::draw(
-            ctx,
-            &self.text,
-            param
-            )?;
-        
-        Ok(())
-    }
-}
-
-enum GameOption {
-    StartScreen(Menu),
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum GameState {
+    Starting,
     Running,
-    Paused(Menu),
-    GameOver(f32, Menu),
+    Gameover,
 }
 
-pub struct GameState {
+pub struct Game {
+    state: GameState,
     bird: Bird,
-    pipes: LinkedList<Pipe>,
-    
-    rng: Rand32,
-
-    state: GameOption,
+    pipes: Pipes
 }
-impl GameState {
-    pub fn new() -> Self {
+
+impl Game {
+    pub fn new(_ctx: &mut Context) -> Game {
         let mut seed = [0;8];
         getrandom::getrandom(&mut seed).expect("Could not generate RNG seed");
         
         let rng = Rand32::new(u64::from_ne_bytes(seed));
 
-        let frag = TextFragment::new("Press Space to start!").scale(40.0.into());
-        let menu = Menu::new(frag);
-        
-        GameState {
-            bird: Bird::new(BIRD_SIZE),
-            pipes: LinkedList::new(),
-            rng,
-            state: GameOption::StartScreen(menu),
+        // Load/create resources such as images here.
+        Game {
+            state: GameState::Starting,
+            bird: Bird::new(),
+            pipes: Pipes::new(rng),
         }
+    }
+
+    fn change_state_to(&mut self, new_state: GameState) {
+        self.state = new_state;
+    }
+
+    fn jump(&mut self) {
+        self.bird.jump()
     }
 
     fn restart(&mut self) {
-        let mut seed = [0;8];
-        getrandom::getrandom(&mut seed).expect("Could not generate RNG seed");
+        self.change_state_to(GameState::Starting);
+        self.bird = Bird::new();
+        self.pipes.clear();
+    }
 
-        let rng = Rand32::new(u64::from_ne_bytes(seed));
-
-        self.rng   = rng;
-        self.bird  = Bird::new(BIRD_SIZE);
-        self.pipes = LinkedList::new();
-        self.state = GameOption::Running;
+    fn is_not_colliding(&self) -> bool {
+        !self.pipes.is_colliding(self.bird.position())
     }
 }
 
-
-
-impl EventHandler for GameState {
-    fn update(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-        if let GameOption::StartScreen(menu) = &mut self.state {
-            menu.change_foreground_color(timer::delta(ctx));
-            return Ok(());
-        }
-        if let GameOption::GameOver(sec, menu) = &mut self.state {
-            if *sec > 0.0 {
-                *sec -= timer::delta(ctx).as_secs_f32();
+impl EventHandler for Game {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
+        if self.state == GameState::Running {
+            
+            if self.bird.is_on_screen() && self.is_not_colliding() {
+                self.bird.update(ctx);
+                self.pipes.update(ctx);
             } else {
-                menu.change_foreground_color(timer::delta(ctx));
-            }
-
-            return Ok(());
-        }
-
-
-        // Checks if the first pipe is outside of the screen and deletes it
-        if let Some(p) = self.pipes.front() {
-            if p.pos_x() < -PIPE_WIDTH {
-                self.pipes.pop_front();
-            }
-        }
-        // if there is no pipe creates one offscreen
-        else {
-            let pipe = Pipe::new(
-                PIPE_WIDTH,
-                PIPE_GAP,
-                &mut self.rng,
-                100 + PIPE_GAP as u32 .. 500
-            );
-
-            self.pipes.push_back(pipe);
-        }
-
-        // Checks if the last pipe has moved enough to spawn a new one
-        if let Some(p) = self.pipes.back() {
-            if p.pos_x() < SCREEN_SIZE.0 - PIPE_DISTANCE - PIPE_WIDTH {
-                let pipe = Pipe::new(
-                    PIPE_WIDTH,
-                    PIPE_GAP,
-                    &mut self.rng,
-                    100 + PIPE_GAP as u32 .. 500
-                );
-
-                self.pipes.push_back(pipe);
-            }
-        }
-
-        
-        let dt = timer::delta(ctx);
-        
-        self.bird.update(dt);
-
-        // Moving the pipes to the left
-        for i in self.pipes.iter_mut() {
-            i.move_foward(dt);
-        }
-        
-        for p in self.pipes.iter() {
-            if self.bird.is_colliding(p) || !self.bird.is_on_screen() {
-                let frag = TextFragment::new("").scale(60.0.into());
-                let menu = Menu::new(frag);
-
-                self.state = GameOption::GameOver(5.0, menu);
-                break;
+                self.change_state_to(GameState::Gameover);
             }
         }
 
         Ok(())
     }
 
-    fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-        if let GameOption::StartScreen(menu) = &self.state {
-            graphics::clear(ctx, menu.background.into());
-            menu.draw(ctx)?;
-            graphics::present(ctx)?;
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        use GameState::*;
 
-            return Ok(());
+        let mut canvas: Canvas;
+
+        if self.state == Starting {
+            canvas = Canvas::from_frame(ctx, Color::BLACK);
+            let text = graphics::Text::new("Press Space to start!");
+            canvas.draw(&text, DrawParam::default().z(1));
+            return canvas.finish(ctx);
         }
 
-        graphics::clear(ctx, [0.0, 1.0, 1.0, 1.0].into());
+        canvas = Canvas::from_frame(ctx, Color::CYAN);
+        canvas.draw(&self.bird.get_mesh(ctx)?, DrawParam::default().z(1));
 
-        self.bird.draw(ctx)?;
-
-        for i in self.pipes.iter() {
-            i.draw(ctx)?;
+        if let Ok(meshs) = self.pipes.get_meshes(ctx) {
+            for mesh in meshs {
+                canvas.draw(&mesh, DrawParam::default().z(1))
+            } 
         }
 
-        if let GameOption::GameOver(sec, ref mut menu) = self.state {
-            let screen = graphics::Rect::new(0.0, 0.0, SCREEN_SIZE.0, SCREEN_SIZE.1);
-            let rectangle = graphics::Mesh::new_rectangle(
-                ctx,
-                graphics::DrawMode::fill(),
-                screen,
-                [1.0, 0.0, 0.0, 0.7].into()
-            )?;
+        if self.state == Gameover {
+            let screen = Rect::new(0., 0., SCREEN_SIZE.0, SCREEN_SIZE.1);
+            let gameover_box = Mesh::new_rectangle(ctx, graphics::DrawMode::fill(), screen, GAMEOVER_COLOR.into())?;
 
-            
-            graphics::draw(ctx, &rectangle, ([0.0,0.0],))?;
-            
-            let sec = sec.ceil() as i8;
-            let frag = menu.text.fragments_mut();
-            let f;
-
-            if sec > 0 {
-                f = TextFragment::new(format!("{}", sec)).scale(120.0.into());
-            } else {
-                f = TextFragment::new("Press Space!").scale(60.0.into());
-            }
-
-            frag[0] = f;
-            
-            menu.draw(ctx)?;
+            canvas.draw(&gameover_box, DrawParam::default().z(2));
         }
 
-        graphics::present(ctx)?;
-
-        Ok(())
+        canvas.finish(ctx)
     }
 
-    fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
-        match keycode {
-            KeyCode::Space => {
-                match self.state {
-                    GameOption::Running     => self.bird.jump(),
-                    GameOption::GameOver(s, _) => if s <= 0.0 { self.restart(); },
-                    GameOption::StartScreen(_) => self.state = GameOption::Running,
-                    _ => (),
-                }
-            },
+    fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeated: bool,) -> Result<(), ggez::GameError> {
+        if let Some(keycode) = input.keycode {
+            match (keycode, &mut self.state) {
+                (KeyCode::Space, GameState::Starting) => self.change_state_to(GameState::Running),
+                (KeyCode::Space, GameState::Running)  => self.jump(),
+                (KeyCode::Space, GameState::Gameover) => self.restart(),
 
-            KeyCode::Escape => ggez::event::quit(ctx),
-            
-            _ => ()
+                (KeyCode::Escape, _) => ctx.request_quit(),
+                _ => {},
+            }
         }
+
+        Ok(())
     }
 }

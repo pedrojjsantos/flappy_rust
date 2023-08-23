@@ -1,28 +1,26 @@
-extern crate ggez;
-extern crate oorandom;
-extern crate getrandom;
-extern crate glam;
+use ggez::ContextBuilder;
+use ggez::event;
 
+mod bird;
+mod pipe;
 mod game;
-mod game_objects;
-
-use ggez::{ContextBuilder, GameResult};
 
 const SCREEN_SIZE: (f32, f32) = (800.0, 600.0);
 
-fn main() -> GameResult {
+fn main() {
     let win_setup = ggez::conf::WindowSetup::default()
         .title("Flappy Rust")
         .vsync(true);
     let win_mode = ggez::conf::WindowMode::default()
         .dimensions(SCREEN_SIZE.0, SCREEN_SIZE.1);
 
-    let (ctx, event_loop) = ContextBuilder::new("flappy_rust", "jezzuz")
+    let (mut ctx, event_loop) = ContextBuilder::new("flappy_rust", "Jezzuz")
         .window_setup(win_setup)
         .window_mode(win_mode)
-        .build()?;
+        .build()
+        .expect("aieee, could not create ggez context!");
 
-    let state = game::GameState::new();
+    let my_game = game::Game::new(&mut ctx);
 
-    ggez::event::run(ctx, event_loop, state);
+    event::run(ctx, event_loop, my_game);
 }
